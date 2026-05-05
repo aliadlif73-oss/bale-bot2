@@ -1,112 +1,109 @@
 from flask import Flask, request
 import json
+import requests
 from datetime import datetime
 
 app = Flask(__name__)
 
-TOKEN = "توکن_ربات_بله_تو"
-
+TOKEN = "1956867539:Qpq0riwmj0FemRdVwB60QRDGpgDz8txxLmU"
 API_URL = f"https://tapi.bale.ai/bot{TOKEN}/sendMessage"
 
-# ====== دیتای اولیه ======
+user_states = {}
+
 supervisors = [
     "سعید زمانیان",
     "مرتضی سالاریه",
     "عباس یاقوتی"
 ]
 
-# ====== وضعیت کاربران ======
-user_states = {}
-
-# ====== ارسال پیام ======
 def send_message(chat_id, text, keyboard=None):
-    import requests
-
     payload = {
         "chat_id": chat_id,
         "text": text
     }
 
     if keyboard:
-        payload["reply_markup"] = json.dumps({
+        payload["reply_markup"] = {
             "keyboard": keyboard,
             "resize_keyboard": True
-        })
+        }
 
-    requests.post(API_URL, data=payload)
+    requests.post(API_URL, json=payload)
 
-# ====== ذخیره دیتا ======
+
 def save_data(data):
-    with open("data.json", "a") as f:
+    with open("data.json", "a", encoding="utf-8") as f:
         f.write(json.dumps(data, ensure_ascii=False) + "\n")
 
-# ====== webhook ======
+
+@app.route('/', methods=['GET'])
+def home():
+    return "Bot is running"
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
 
-    try:
-        message = data["message"]
-        chat_id = message["chat"]["id"]
-        text = message.get("text", "")
-    except:
+    print(data)  # برای لاگ
+
+    if "message" not in data:
         return "ok"
+
+    message = data["message"]
+    chat_id = message["chat"]["id"]
+    text = message.get("text", "")
 
     if chat_id not in user_states:
         user_states[chat_id] = {"step": "start", "data": {}}
 
     state = user_states[chat_id]
 
-    # ====== شروع ======
+    # START
     if text == "/start":
         state["step"] = "choose_supervisor"
 
         keyboard = [[s] for s in supervisors]
 
-        send_message(chat_id, "سرپرست خود را انتخاب کنید:", keyboard)
+        send_message(chat_id, "سرپرست را انتخاب کن:", keyboard)
         return "ok"
 
-    # ====== انتخاب سرپرست ======
+    # انتخاب سرپرست
     if state["step"] == "choose_supervisor":
         state["data"]["supervisor"] = text
         state["step"] = "choose_type"
 
         keyboard = [
-            ["📉 گزارش خرید نکرده"],
-            ["🎯 گزارش پک"]
+            ["گزارش خرید نکرده"],
+            ["گزارش پک"]
         ]
 
-        send_message(chat_id, "نوع گزارش را انتخاب کنید:", keyboard)
+        send_message(chat_id, "نوع گزارش:", keyboard)
         return "ok"
 
-    # ====== انتخاب نوع ======
+    # انتخاب نوع
     if state["step"] == "choose_type":
 
-        # ===== خرید نکرده =====
         if "خرید نکرده" in text:
             state["data"]["type"] = "no_buy"
-            state["step"] = "ask_customer"
+            state["step"] = "customer"
 
-            send_message(chat_id, "کد مشتری را وارد کنید:")
+            send_message(chat_id, "کد مشتری را وارد کن:")
             return "ok"
 
-        # ===== پک =====
         if "پک" in text:
             state["data"]["type"] = "pack"
-            state["step"] = "pack_15"
+            state["step"] = "pack15"
 
-            keyboard = [[str(i) for i in range(0, 11)]]
-
-            send_message(chat_id, "تعداد پک ۱۵ میلیونی:", keyboard)
+            send_message(chat_id, "تعداد پک ۱۵ میلیونی (۰ تا ۱۰):")
             return "ok"
 
-    # ====== فلو خرید نکرده ======
+    # خرید نکرده
     if state["data"].get("type") == "no_buy":
 
-        # کد مشتری
-        if state["step"] == "ask_customer":
+        if state["step"] == "customer":
             state["data"]["customer"] = text
-            state["step"] = "ask_result"
+            state["step"] = "result"
 
             keyboard = [
                 ["خرید کرد"],
@@ -114,86 +111,78 @@ def webhook():
                 ["خرید نکرد"]
             ]
 
-            send_message(chat_id, "نتیجه ویزیت:", keyboard)
+            send_message(chat_id, "نتیجه:", keyboard)
             return "ok"
 
-        # نتیجه
-        if state["step"] == "ask_result":
+        if state["step"] == "result":
             state["data"]["result"] = text
 
             if text == "خرید کرد":
-                state["step"] = "ask_amount"
-                send_message(chat_id, "مبلغ خرید:")
+                state["step"] = "amount"
+                send_message(chat_id, "مبلغ:")
                 return "ok"
 
-            elif "پیگیری" in text:
-                state["step"] = "ask_followup"
-                send_message(chat_id, "کی برای پیگیری مراجعه می‌کنید؟")
+            if "پیگیری" in text:
+                state["step"] = "follow"
+                send_message(chat_id, "زمان پیگیری:")
                 return "ok"
 
-            elif "نکرد" in text:
-                state["step"] = "ask_reason"
-                send_message(chat_id, "علت خرید نکردن چیست؟")
+            if "نکرد" in text:
+                state["step"] = "reason"
+                send_message(chat_id, "علت:")
                 return "ok"
 
-        # مبلغ
-        if state["step"] == "ask_amount":
+        if state["step"] == "amount":
             state["data"]["amount"] = text
             return finish(chat_id, state)
 
-        # علت
-        if state["step"] == "ask_reason":
+        if state["step"] == "follow":
+            state["data"]["follow"] = text
+            return finish(chat_id, state)
+
+        if state["step"] == "reason":
             state["data"]["reason"] = text
             return finish(chat_id, state)
 
-        # پیگیری
-        if state["step"] == "ask_followup":
-            state["data"]["followup"] = text
-            return finish(chat_id, state)
-
-    # ====== فلو پک ======
+    # پک
     if state["data"].get("type") == "pack":
 
-        if state["step"] == "pack_15":
-            state["data"]["pack_15"] = text
-            state["step"] = "pack_45"
-            send_message(chat_id, "تعداد پک ۴۵ میلیونی:", [[str(i) for i in range(0,11)]])
+        if state["step"] == "pack15":
+            state["data"]["p15"] = text
+            state["step"] = "pack45"
+            send_message(chat_id, "پک ۴۵:")
             return "ok"
 
-        if state["step"] == "pack_45":
-            state["data"]["pack_45"] = text
-            state["step"] = "pack_75"
-            send_message(chat_id, "تعداد پک ۷۵ میلیونی:", [[str(i) for i in range(0,11)]])
+        if state["step"] == "pack45":
+            state["data"]["p45"] = text
+            state["step"] = "pack75"
+            send_message(chat_id, "پک ۷۵:")
             return "ok"
 
-        if state["step"] == "pack_75":
-            state["data"]["pack_75"] = text
-            state["step"] = "pack_150"
-            send_message(chat_id, "تعداد پک ۱۵۰ میلیونی:", [[str(i) for i in range(0,11)]])
+        if state["step"] == "pack75":
+            state["data"]["p75"] = text
+            state["step"] = "pack150"
+            send_message(chat_id, "پک ۱۵۰:")
             return "ok"
 
-        if state["step"] == "pack_150":
-            state["data"]["pack_150"] = text
-            state["step"] = "pack_150_plus"
-            send_message(chat_id, "تعداد پک بالای ۱۵۰ میلیونی:", [[str(i) for i in range(0,11)]])
+        if state["step"] == "pack150":
+            state["data"]["p150"] = text
+            state["step"] = "packplus"
+            send_message(chat_id, "پک بالای ۱۵۰:")
             return "ok"
 
-        if state["step"] == "pack_150_plus":
-            state["data"]["pack_150_plus"] = text
+        if state["step"] == "packplus":
+            state["data"]["pplus"] = text
             return finish(chat_id, state)
 
     return "ok"
 
 
-# ====== پایان ======
 def finish(chat_id, state):
     state["data"]["time"] = str(datetime.now())
-
     save_data(state["data"])
 
-    keyboard = [["ثبت پایگاه بعدی"]]
-
-    send_message(chat_id, "گزارش ثبت شد ✅", keyboard)
+    send_message(chat_id, "ثبت شد ✅\nثبت پایگاه بعدی؟", [["بله"]])
 
     state["step"] = "choose_supervisor"
     state["data"] = {}
@@ -201,6 +190,5 @@ def finish(chat_id, state):
     return "ok"
 
 
-# ====== اجرا ======
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
