@@ -22,7 +22,7 @@ with open("customers.json", "r", encoding="utf-8") as f:
     customers = json.load(f)
 
 # =========================
-# LOCK
+# FILE LOCK
 # =========================
 
 file_lock = threading.Lock()
@@ -43,7 +43,7 @@ supervisors = [
 ]
 
 # =========================
-# USER STATES
+# STATES
 # =========================
 
 user_states = {}
@@ -208,7 +208,7 @@ def webhook():
     step = state["step"]
 
     # =========================
-    # CHOOSE SUPERVISOR
+    # SUPERVISOR
     # =========================
 
     if step == "choose_supervisor":
@@ -241,7 +241,7 @@ def webhook():
         return "ok"
 
     # =========================
-    # CHOOSE REPORT TYPE
+    # CHOOSE TYPE
     # =========================
 
     if step == "choose_type":
@@ -301,6 +301,26 @@ def webhook():
 
         customer = customers[text]
 
+        # =========================
+        # VALIDATE SUPERVISOR
+        # =========================
+
+        selected_supervisor = state["data"]["supervisor"]
+
+        customer_supervisor = customer.get(
+            "supervisor",
+            ""
+        ).strip()
+
+        if customer_supervisor != selected_supervisor:
+
+            send_message(
+                chat_id,
+                "❌ این مشتری متعلق به سرپرست شما نیست."
+            )
+
+            return "ok"
+
         state["data"]["customer_code"] = text
 
         state["data"]["customer_name"] = customer["name"]
@@ -343,10 +363,7 @@ def webhook():
 
         state["data"]["result"] = text
 
-        # =========================
         # BUY
-        # =========================
-
         if text == "✅ خرید کرد":
 
             state["step"] = "amount"
@@ -358,10 +375,7 @@ def webhook():
 
             return "ok"
 
-        # =========================
         # FOLLOWUP
-        # =========================
-
         if text == "🔄 نیاز به پیگیری":
 
             state["step"] = "followup"
@@ -380,10 +394,7 @@ def webhook():
 
             return "ok"
 
-        # =========================
         # NO BUY
-        # =========================
-
         if text == "❌ خرید نکرد":
 
             state["step"] = "reason"
