@@ -3,6 +3,7 @@ import json
 import requests
 from datetime import datetime
 import threading
+import jdatetime
 
 app = Flask(__name__)
 
@@ -54,6 +55,13 @@ user_states = {}
 
 def now_time():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def jalali_date():
+
+    now = jdatetime.datetime.now()
+
+    return now.strftime("%m/%d")
 
 
 def format_price(price):
@@ -125,28 +133,58 @@ def finish(chat_id):
 
     save_data(data)
 
+    shamsi = jalali_date()
+
     txt = "✅ گزارش با موفقیت ثبت شد\n\n"
 
     txt += f"👤 سرپرست: {data.get('supervisor')}\n"
 
-    if data.get("customer_name"):
-        txt += f"🏪 فروشگاه: {data.get('customer_name')}\n"
+    txt += f"📅 تاریخ: {shamsi}\n"
 
-    txt += f"📌 نتیجه ویزیت: {data.get('result')}\n"
+    # =========================
+    # NO BUY FLOW SUMMARY
+    # =========================
 
-    if data.get("amount"):
+    if data.get("type") == "no_buy":
 
-        formatted_amount = format_price(
-            data.get("amount")
-        )
+        txt += "\n"
 
-        txt += f"💰 مبلغ فروش:\n{formatted_amount} ریال\n"
+        if data.get("customer_name"):
+            txt += f"🏪 فروشگاه: {data.get('customer_name')}\n"
 
-    if data.get("reason"):
-        txt += f"❌ علت عدم خرید:\n{data.get('reason')}\n"
+        txt += f"📌 نتیجه ویزیت: {data.get('result')}\n"
 
-    if data.get("followup"):
-        txt += f"📅 زمان پیگیری:\n{data.get('followup')}\n"
+        if data.get("amount"):
+
+            formatted_amount = format_price(
+                data.get("amount")
+            )
+
+            txt += f"💰 مبلغ فروش:\n{formatted_amount} ریال\n"
+
+        if data.get("reason"):
+            txt += f"❌ علت عدم خرید:\n{data.get('reason')}\n"
+
+        if data.get("followup"):
+            txt += f"📅 زمان پیگیری:\n{data.get('followup')}\n"
+
+    # =========================
+    # PACK FLOW SUMMARY
+    # =========================
+
+    if data.get("type") == "pack":
+
+        txt += "\n📦 گزارش پک ثبت شد\n\n"
+
+        txt += f"پک ۱۵ میلیونی: {data.get('pack15', '0')}\n"
+
+        txt += f"پک ۴۵ میلیونی: {data.get('pack45', '0')}\n"
+
+        txt += f"پک ۷۵ میلیونی: {data.get('pack75', '0')}\n"
+
+        txt += f"پک ۱۵۰ میلیونی: {data.get('pack150', '0')}\n"
+
+        txt += f"پک بالای ۱۵۰: {data.get('packplus', '0')}\n"
 
     keyboard = [
         ["➕ ثبت پایگاه بعدی"],
@@ -368,10 +406,7 @@ def webhook():
 
         state["data"]["result"] = text
 
-        # =========================
         # BUY
-        # =========================
-
         if text == "✅ خرید کرد":
 
             state["step"] = "amount"
@@ -383,10 +418,7 @@ def webhook():
 
             return "ok"
 
-        # =========================
         # FOLLOWUP
-        # =========================
-
         if text == "🔄 نیاز به پیگیری":
 
             state["step"] = "followup"
@@ -405,10 +437,7 @@ def webhook():
 
             return "ok"
 
-        # =========================
         # NO BUY
-        # =========================
-
         if text == "❌ خرید نکرد":
 
             state["step"] = "reason"
