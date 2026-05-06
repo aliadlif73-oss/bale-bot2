@@ -208,7 +208,7 @@ def webhook():
     step = state["step"]
 
     # =========================
-    # SUPERVISOR
+    # CHOOSE SUPERVISOR
     # =========================
 
     if step == "choose_supervisor":
@@ -305,14 +305,19 @@ def webhook():
         # VALIDATE SUPERVISOR
         # =========================
 
-        selected_supervisor = state["data"]["supervisor"]
+        selected_supervisor = (
+            state["data"]["supervisor"]
+            .replace(" ", "")
+            .strip()
+        )
 
-        customer_supervisor = customer.get(
-            "supervisor",
-            ""
-        ).strip()
+        customer_supervisor = (
+            customer.get("supervisor", "")
+            .replace(" ", "")
+            .strip()
+        )
 
-        if customer_supervisor != selected_supervisor:
+        if selected_supervisor not in customer_supervisor:
 
             send_message(
                 chat_id,
@@ -363,7 +368,10 @@ def webhook():
 
         state["data"]["result"] = text
 
+        # =========================
         # BUY
+        # =========================
+
         if text == "✅ خرید کرد":
 
             state["step"] = "amount"
@@ -375,7 +383,10 @@ def webhook():
 
             return "ok"
 
+        # =========================
         # FOLLOWUP
+        # =========================
+
         if text == "🔄 نیاز به پیگیری":
 
             state["step"] = "followup"
@@ -394,7 +405,10 @@ def webhook():
 
             return "ok"
 
+        # =========================
         # NO BUY
+        # =========================
+
         if text == "❌ خرید نکرد":
 
             state["step"] = "reason"
