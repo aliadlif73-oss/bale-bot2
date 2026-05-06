@@ -43,7 +43,7 @@ supervisors = [
 ]
 
 # =========================
-# STATES
+# USER STATES
 # =========================
 
 user_states = {}
@@ -54,6 +54,14 @@ user_states = {}
 
 def now_time():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def format_price(price):
+
+    try:
+        return "{:,}".format(int(price))
+    except:
+        return "0"
 
 
 def send_message(chat_id, text, keyboard=None):
@@ -69,14 +77,17 @@ def send_message(chat_id, text, keyboard=None):
             "resize_keyboard": True
         }
 
-    requests.post(SEND_URL, data={
-        "chat_id": payload["chat_id"],
-        "text": payload["text"],
-        "reply_markup": json.dumps(
-            payload.get("reply_markup", {}),
-            ensure_ascii=False
-        )
-    })
+    requests.post(
+        SEND_URL,
+        data={
+            "chat_id": payload["chat_id"],
+            "text": payload["text"],
+            "reply_markup": json.dumps(
+                payload.get("reply_markup", {}),
+                ensure_ascii=False
+            )
+        }
+    )
 
 
 def save_data(data):
@@ -121,16 +132,21 @@ def finish(chat_id):
     if data.get("customer_name"):
         txt += f"🏪 فروشگاه: {data.get('customer_name')}\n"
 
-    txt += f"📌 نتیجه: {data.get('result')}\n"
+    txt += f"📌 نتیجه ویزیت: {data.get('result')}\n"
 
     if data.get("amount"):
-        txt += f"💰 مبلغ فروش: {data.get('amount')} ریال\n"
+
+        formatted_amount = format_price(
+            data.get("amount")
+        )
+
+        txt += f"💰 مبلغ فروش:\n{formatted_amount} ریال\n"
 
     if data.get("reason"):
-        txt += f"❌ علت عدم خرید: {data.get('reason')}\n"
+        txt += f"❌ علت عدم خرید:\n{data.get('reason')}\n"
 
     if data.get("followup"):
-        txt += f"📅 زمان پیگیری: {data.get('followup')}\n"
+        txt += f"📅 زمان پیگیری:\n{data.get('followup')}\n"
 
     keyboard = [
         ["➕ ثبت پایگاه بعدی"],
@@ -167,14 +183,20 @@ def webhook():
 
     text = message.get("text", "").strip()
 
+    # =========================
     # START
+    # =========================
+
     if text == "/start" or text == "🔄 شروع مجدد":
 
         reset_user(chat_id)
 
         return "ok"
 
+    # =========================
     # CREATE STATE
+    # =========================
+
     if chat_id not in user_states:
 
         reset_user(chat_id)
@@ -186,7 +208,7 @@ def webhook():
     step = state["step"]
 
     # =========================
-    # SUPERVISOR
+    # CHOOSE SUPERVISOR
     # =========================
 
     if step == "choose_supervisor":
@@ -219,7 +241,7 @@ def webhook():
         return "ok"
 
     # =========================
-    # CHOOSE TYPE
+    # CHOOSE REPORT TYPE
     # =========================
 
     if step == "choose_type":
@@ -280,15 +302,20 @@ def webhook():
         customer = customers[text]
 
         state["data"]["customer_code"] = text
+
         state["data"]["customer_name"] = customer["name"]
+
+        formatted_buy = format_price(
+            customer["last_buy"]
+        )
 
         info = f"""
 🏪 {customer['name']}
 
 📅 {customer['days']} روز خرید نداشته
 
-💰 آخرین مبلغ خرید:
-{customer['last_buy']} ریال
+💰 کل خرید ۱۴۰۴:
+{formatted_buy} ریال
 """
 
         keyboard = [
@@ -316,19 +343,25 @@ def webhook():
 
         state["data"]["result"] = text
 
+        # =========================
         # BUY
+        # =========================
+
         if text == "✅ خرید کرد":
 
             state["step"] = "amount"
 
             send_message(
                 chat_id,
-                "💰 مبلغ فروش را به ریال وارد کنید\n\nمثال:\n25000000"
+                "💰 مبلغ فروش را به ریال وارد کنید\n\nمثال:\n25,000,000"
             )
 
             return "ok"
 
+        # =========================
         # FOLLOWUP
+        # =========================
+
         if text == "🔄 نیاز به پیگیری":
 
             state["step"] = "followup"
@@ -347,7 +380,10 @@ def webhook():
 
             return "ok"
 
+        # =========================
         # NO BUY
+        # =========================
+
         if text == "❌ خرید نکرد":
 
             state["step"] = "reason"
@@ -365,7 +401,11 @@ def webhook():
 
     if step == "amount":
 
-        clean = text.replace(",", "").replace(" ", "")
+        clean = (
+            text
+            .replace(",", "")
+            .replace(" ", "")
+        )
 
         if not clean.isdigit():
 
@@ -416,7 +456,10 @@ def webhook():
 
         if text not in nums:
 
-            send_message(chat_id, "فقط عدد ۰ تا ۱۰")
+            send_message(
+                chat_id,
+                "❗ فقط عدد ۰ تا ۱۰ مجاز است."
+            )
 
             return "ok"
 
@@ -436,7 +479,10 @@ def webhook():
 
         if text not in nums:
 
-            send_message(chat_id, "فقط عدد ۰ تا ۱۰")
+            send_message(
+                chat_id,
+                "❗ فقط عدد ۰ تا ۱۰ مجاز است."
+            )
 
             return "ok"
 
@@ -456,7 +502,10 @@ def webhook():
 
         if text not in nums:
 
-            send_message(chat_id, "فقط عدد ۰ تا ۱۰")
+            send_message(
+                chat_id,
+                "❗ فقط عدد ۰ تا ۱۰ مجاز است."
+            )
 
             return "ok"
 
@@ -476,7 +525,10 @@ def webhook():
 
         if text not in nums:
 
-            send_message(chat_id, "فقط عدد ۰ تا ۱۰")
+            send_message(
+                chat_id,
+                "❗ فقط عدد ۰ تا ۱۰ مجاز است."
+            )
 
             return "ok"
 
@@ -496,7 +548,10 @@ def webhook():
 
         if text not in nums:
 
-            send_message(chat_id, "فقط عدد ۰ تا ۱۰")
+            send_message(
+                chat_id,
+                "❗ فقط عدد ۰ تا ۱۰ مجاز است."
+            )
 
             return "ok"
 
