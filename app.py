@@ -11,7 +11,7 @@ app = Flask(__name__)
 # =========================
 TOKEN = "1956867539:Qpq0riwmj0FemRdVwB60QRDGpgDz8txxLmU"
 
-SEND_URL = f"https://tapi.bale.ai/bot{1956867539:Qpq0riwmj0FemRdVwB60QRDGpgDz8txxLmU}/sendMessage"
+SEND_URL = f"https://tapi.bale.ai/bot{token}/sendMessage"
 
 # =========================
 # FILE LOCK
