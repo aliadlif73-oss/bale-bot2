@@ -4,6 +4,8 @@ import requests
 from datetime import datetime
 import threading
 import jdatetime
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 app = Flask(__name__)
 
@@ -14,6 +16,30 @@ app = Flask(__name__)
 TOKEN = "1956867539:Qpq0riwmj0FemRdVwB60QRDGpgDz8txxLmU"
 
 SEND_URL = f"https://tapi.bale.ai/bot{TOKEN}/sendMessage"
+
+# =========================
+# GOOGLE SHEET
+# =========================
+
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
+
+creds = ServiceAccountCredentials.from_json_keyfile_name(
+    "credentials.json",
+    scope
+)
+
+client = gspread.authorize(creds)
+
+sheet = client.open_by_key(
+    "1YEO4KDpPtnxu8ro6cvDvkLXD_rK8KeQolWX4cchKlCg"
+)
+
+sheet_buy = sheet.worksheet("گزارش خرید نکرده")
+
+sheet_pack = sheet.worksheet("گزارش پک")
 
 # =========================
 # LOAD CUSTOMERS
@@ -67,7 +93,7 @@ def jalali_date():
 def format_price(price):
 
     try:
-        return "{:,}".format(int(price))
+        return "{:,}".format(int(float(price)))
     except:
         return "0"
 
@@ -98,17 +124,6 @@ def send_message(chat_id, text, keyboard=None):
     )
 
 
-def save_data(data):
-
-    with file_lock:
-
-        with open("data.json", "a", encoding="utf-8") as f:
-
-            f.write(
-                json.dumps(data, ensure_ascii=False) + "\n"
-            )
-
-
 def reset_user(chat_id):
 
     user_states[chat_id] = {
@@ -129,11 +144,41 @@ def finish(chat_id):
 
     data = user_states[chat_id]["data"]
 
-    data["created_at"] = now_time()
-
-    save_data(data)
-
     shamsi = jalali_date()
+
+    # =========================
+    # SAVE TO GOOGLE SHEET
+    # =========================
+
+    if data.get("type") == "no_buy":
+
+        sheet_buy.append_row([
+            shamsi,
+            data.get("supervisor"),
+            data.get("customer_code"),
+            data.get("customer_name"),
+            data.get("days", ""),
+            data.get("last_buy", ""),
+            data.get("result"),
+            data.get("amount", ""),
+            data.get("followup", "")
+        ])
+
+    if data.get("type") == "pack":
+
+        sheet_pack.append_row([
+            shamsi,
+            data.get("supervisor"),
+            data.get("pack15", 0),
+            data.get("pack45", 0),
+            data.get("pack75", 0),
+            data.get("pack150", 0),
+            data.get("packplus", 0)
+        ])
+
+    # =========================
+    # SUMMARY MESSAGE
+    # =========================
 
     txt = "✅ گزارش با موفقیت ثبت شد\n\n"
 
@@ -339,10 +384,6 @@ def webhook():
 
         customer = customers[text]
 
-        # =========================
-        # VALIDATE SUPERVISOR
-        # =========================
-
         selected_supervisor = (
             state["data"]["supervisor"]
             .replace(" ", "")
@@ -367,6 +408,10 @@ def webhook():
         state["data"]["customer_code"] = text
 
         state["data"]["customer_name"] = customer["name"]
+
+        state["data"]["days"] = customer["days"]
+
+        state["data"]["last_buy"] = customer["last_buy"]
 
         formatted_buy = format_price(
             customer["last_buy"]
@@ -406,19 +451,17 @@ def webhook():
 
         state["data"]["result"] = text
 
-        # BUY
         if text == "✅ خرید کرد":
 
             state["step"] = "amount"
 
             send_message(
                 chat_id,
-                "💰 مبلغ فروش را به ریال وارد کنید\n\nمثال:\n25,000,000"
+                "💰 مبلغ فروش را به ریال وارد کنید\n\nمثال:\n25000000"
             )
 
             return "ok"
 
-        # FOLLOWUP
         if text == "🔄 نیاز به پیگیری":
 
             state["step"] = "followup"
@@ -437,7 +480,6 @@ def webhook():
 
             return "ok"
 
-        # NO BUY
         if text == "❌ خرید نکرد":
 
             state["step"] = "reason"
