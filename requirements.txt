@@ -1,3 +1,6 @@
 Flask
 requests
 jdatetime
+gspread
+oauth2client
+gunicorn
