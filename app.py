@@ -4,44 +4,13 @@ import requests
 from datetime import datetime
 import threading
 import jdatetime
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+import csv
+import os
 
 app = Flask(__name__)
 
-# =========================
-# TOKEN
-# =========================
-
 TOKEN = "1956867539:Qpq0riwmj0FemRdVwB60QRDGpgDz8txxLmU"
 SEND_URL = f"https://tapi.bale.ai/bot{TOKEN}/sendMessage"
-
-# =========================
-# GOOGLE SHEET
-# =========================
-
-scope = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive"
-]
-
-creds = ServiceAccountCredentials.from_json_keyfile_name(
-    "credentials.json",
-    scope
-)
-
-client = gspread.authorize(creds)
-
-sheet = client.open_by_key(
-    "1YEO4KDpPtnxu8ro6cvDvkLXD_rK8KeQolWX4cchKlCg"
-)
-
-sheet_buy = sheet.worksheet("گزارش خرید نکرده")
-sheet_pack = sheet.worksheet("گزارش پک")
-
-# =========================
-# LOAD CUSTOMERS
-# =========================
 
 with open("customers.json", "r", encoding="utf-8") as f:
     customers = json.load(f)
@@ -61,14 +30,11 @@ supervisors = [
 
 user_states = {}
 
-# =========================
-# HELPERS
-# =========================
-
 def jalali_date():
-    now = jdatetime.datetime.now()
-    return now.strftime("%m/%d")
+    return jdatetime.datetime.now().strftime("%m/%d")
 
+def jalali_datetime():
+    return jdatetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
 def format_price(price):
     try:
@@ -76,12 +42,8 @@ def format_price(price):
     except:
         return "0"
 
-
 def send_message(chat_id, text, keyboard=None):
-    payload = {
-        "chat_id": chat_id,
-        "text": text
-    }
+    payload = {"chat_id": chat_id, "text": text}
 
     if keyboard:
         payload["reply_markup"] = {
@@ -94,13 +56,78 @@ def send_message(chat_id, text, keyboard=None):
         data={
             "chat_id": payload["chat_id"],
             "text": payload["text"],
-            "reply_markup": json.dumps(
-                payload.get("reply_markup", {}),
-                ensure_ascii=False
-            )
-        }
+            "reply_markup": json.dumps(payload.get("reply_markup", {}), ensure_ascii=False)
+        },
+        timeout=10
     )
 
+def append_csv(filename, headers, row):
+    with file_lock:
+        file_exists = os.path.isfile(filename)
+
+        with open(filename, "a", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+
+            if not file_exists:
+                writer.writerow(headers)
+
+            writer.writerow(row)
+
+def save_no_buy_report(data):
+    headers = [
+        "تاریخ",
+        "تاریخ و ساعت",
+        "سرپرست",
+        "کد مشتری",
+        "نام مشتری",
+        "تعداد روز خرید نکرده",
+        "کل خرید ۱۴۰۴",
+        "نتیجه ویزیت",
+        "مبلغ فروش ریال",
+        "علت عدم خرید",
+        "زمان پیگیری"
+    ]
+
+    row = [
+        jalali_date(),
+        jalali_datetime(),
+        data.get("supervisor", ""),
+        data.get("customer_code", ""),
+        data.get("customer_name", ""),
+        data.get("days", ""),
+        data.get("last_buy", ""),
+        data.get("result", ""),
+        data.get("amount", ""),
+        data.get("reason", ""),
+        data.get("followup", "")
+    ]
+
+    append_csv("report_no_buy.csv", headers, row)
+
+def save_pack_report(data):
+    headers = [
+        "تاریخ",
+        "تاریخ و ساعت",
+        "سرپرست",
+        "پک ۱۵ میلیونی",
+        "پک ۴۵ میلیونی",
+        "پک ۷۵ میلیونی",
+        "پک ۱۵۰ میلیونی",
+        "پک بالای ۱۵۰"
+    ]
+
+    row = [
+        jalali_date(),
+        jalali_datetime(),
+        data.get("supervisor", ""),
+        data.get("pack15", "0"),
+        data.get("pack45", "0"),
+        data.get("pack75", "0"),
+        data.get("pack150", "0"),
+        data.get("packplus", "0")
+    ]
+
+    append_csv("report_pack.csv", headers, row)
 
 def reset_user(chat_id):
     user_states[chat_id] = {
@@ -116,60 +143,15 @@ def reset_user(chat_id):
         keyboard
     )
 
-
-def go_to_report_type(chat_id):
-    user_states[chat_id]["step"] = "choose_type"
-    user_states[chat_id]["data"] = {}
-
-    keyboard = [
-        ["📉 گزارش خرید نکرده"],
-        ["🎯 گزارش پک"],
-        ["🔄 شروع مجدد"]
-    ]
-
-    send_message(
-        chat_id,
-        "نوع گزارش را انتخاب کنید:",
-        keyboard
-    )
-
-
 def finish(chat_id):
     data = user_states[chat_id]["data"]
     shamsi = jalali_date()
 
-    # =========================
-    # SAVE TO GOOGLE SHEET
-    # =========================
-
     if data.get("type") == "no_buy":
-        sheet_buy.append_row([
-            shamsi,
-            data.get("supervisor", ""),
-            data.get("customer_code", ""),
-            data.get("customer_name", ""),
-            data.get("days", ""),
-            data.get("last_buy", ""),
-            data.get("result", ""),
-            data.get("amount", ""),
-            data.get("reason", ""),
-            data.get("followup", "")
-        ])
+        save_no_buy_report(data)
 
     if data.get("type") == "pack":
-        sheet_pack.append_row([
-            shamsi,
-            data.get("supervisor", ""),
-            data.get("pack15", 0),
-            data.get("pack45", 0),
-            data.get("pack75", 0),
-            data.get("pack150", 0),
-            data.get("packplus", 0)
-        ])
-
-    # =========================
-    # SUMMARY MESSAGE
-    # =========================
+        save_pack_report(data)
 
     txt = "✅ گزارش با موفقیت ثبت شد\n\n"
     txt += f"👤 سرپرست: {data.get('supervisor')}\n"
@@ -177,11 +159,8 @@ def finish(chat_id):
 
     if data.get("type") == "no_buy":
         txt += "\n"
-
-        if data.get("customer_name"):
-            txt += f"🏪 فروشگاه: {data.get('customer_name')}\n"
-
-        txt += f"📌 نتیجه ویزیت: {data.get('result')}\n"
+        txt += f"🏪 فروشگاه: {data.get('customer_name', '')}\n"
+        txt += f"📌 نتیجه ویزیت: {data.get('result', '')}\n"
 
         if data.get("amount"):
             txt += f"💰 مبلغ فروش:\n{format_price(data.get('amount'))} ریال\n"
@@ -210,14 +189,9 @@ def finish(chat_id):
     user_states[chat_id]["step"] = "after_finish"
     user_states[chat_id]["data"] = {}
 
-# =========================
-# ROUTES
-# =========================
-
 @app.route("/")
 def home():
     return "Bale Bot Running"
-
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -241,10 +215,6 @@ def webhook():
     state = user_states[chat_id]
     step = state["step"]
 
-    # =========================
-    # AFTER FINISH
-    # =========================
-
     if step == "after_finish":
         if text == "➕ ثبت پایگاه بعدی":
             reset_user(chat_id)
@@ -257,16 +227,9 @@ def webhook():
         )
         return "ok"
 
-    # =========================
-    # CHOOSE SUPERVISOR
-    # =========================
-
     if step == "choose_supervisor":
         if text not in supervisors:
-            send_message(
-                chat_id,
-                "❗ لطفاً یکی از سرپرست‌ها را انتخاب کنید."
-            )
+            send_message(chat_id, "❗ لطفاً یکی از سرپرست‌ها را انتخاب کنید.")
             return "ok"
 
         state["data"]["supervisor"] = text
@@ -278,88 +241,42 @@ def webhook():
             ["🔄 شروع مجدد"]
         ]
 
-        send_message(
-            chat_id,
-            "✅ سرپرست ثبت شد\n\nنوع گزارش را انتخاب کنید:",
-            keyboard
-        )
-
+        send_message(chat_id, "✅ سرپرست ثبت شد\n\nنوع گزارش را انتخاب کنید:", keyboard)
         return "ok"
-
-    # =========================
-    # CHOOSE TYPE
-    # =========================
 
     if step == "choose_type":
         if text == "📉 گزارش خرید نکرده":
             state["data"]["type"] = "no_buy"
             state["step"] = "customer_code"
-
-            send_message(
-                chat_id,
-                "🧾 کد مشتری را وارد کنید:\n\nفقط عدد وارد شود"
-            )
-
+            send_message(chat_id, "🧾 کد مشتری را وارد کنید:\n\nفقط عدد وارد شود")
             return "ok"
 
         if text == "🎯 گزارش پک":
             state["data"]["type"] = "pack"
             state["step"] = "pack15"
-
             nums = [[str(i) for i in range(11)]]
-
-            send_message(
-                chat_id,
-                "📦 تعداد پک ۱۵ میلیونی:",
-                nums
-            )
-
+            send_message(chat_id, "📦 تعداد پک ۱۵ میلیونی:", nums)
             return "ok"
 
-        send_message(
-            chat_id,
-            "❗ لطفاً نوع گزارش را از دکمه‌ها انتخاب کنید."
-        )
+        send_message(chat_id, "❗ لطفاً نوع گزارش را از دکمه‌ها انتخاب کنید.")
         return "ok"
-
-    # =========================
-    # CUSTOMER CODE
-    # =========================
 
     if step == "customer_code":
         if not text.isdigit():
-            send_message(
-                chat_id,
-                "❗ کد مشتری فقط باید عدد باشد."
-            )
+            send_message(chat_id, "❗ کد مشتری فقط باید عدد باشد.")
             return "ok"
 
         if text not in customers:
-            send_message(
-                chat_id,
-                "❗ مشتری پیدا نشد."
-            )
+            send_message(chat_id, "❗ مشتری پیدا نشد.")
             return "ok"
 
         customer = customers[text]
 
-        selected_supervisor = (
-            state["data"]["supervisor"]
-            .replace(" ", "")
-            .strip()
-        )
-
-        customer_supervisor = (
-            customer.get("supervisor", "")
-            .replace(" ", "")
-            .strip()
-        )
+        selected_supervisor = state["data"]["supervisor"].replace(" ", "").strip()
+        customer_supervisor = customer.get("supervisor", "").replace(" ", "").strip()
 
         if selected_supervisor not in customer_supervisor:
-            send_message(
-                chat_id,
-                "❌ این مشتری متعلق به سرپرست شما نیست."
-            )
+            send_message(chat_id, "❌ این مشتری متعلق به سرپرست شما نیست.")
             return "ok"
 
         state["data"]["customer_code"] = text
@@ -387,127 +304,65 @@ def webhook():
 
         state["step"] = "result"
 
-        send_message(
-            chat_id,
-            info + "\n📌 نتیجه ویزیت را انتخاب کنید:",
-            keyboard
-        )
-
+        send_message(chat_id, info + "\n📌 نتیجه ویزیت را انتخاب کنید:", keyboard)
         return "ok"
 
-    # =========================
-    # RESULT
-    # =========================
-
     if step == "result":
-        valid_results = [
-            "✅ خرید کرد",
-            "🔄 نیاز به پیگیری",
-            "❌ خرید نکرد"
-        ]
+        valid_results = ["✅ خرید کرد", "🔄 نیاز به پیگیری", "❌ خرید نکرد"]
 
         if text not in valid_results:
-            send_message(
-                chat_id,
-                "❗ لطفاً نتیجه ویزیت را از دکمه‌ها انتخاب کنید."
-            )
+            send_message(chat_id, "❗ لطفاً نتیجه ویزیت را از دکمه‌ها انتخاب کنید.")
             return "ok"
 
         state["data"]["result"] = text
 
         if text == "✅ خرید کرد":
             state["step"] = "amount"
-
-            send_message(
-                chat_id,
-                "💰 مبلغ فروش را به ریال وارد کنید\n\nمثال:\n25000000"
-            )
-
+            send_message(chat_id, "💰 مبلغ فروش را به ریال وارد کنید\n\nمثال:\n25000000")
             return "ok"
 
         if text == "🔄 نیاز به پیگیری":
             state["step"] = "followup"
-
             keyboard = [
                 ["📅 ۳ روز آینده"],
                 ["📅 تا یک هفته آینده"],
                 ["📅 تا آخر ماه"],
                 ["🔄 شروع مجدد"]
             ]
-
-            send_message(
-                chat_id,
-                "📌 زمان پیگیری بعدی را انتخاب کنید:",
-                keyboard
-            )
-
+            send_message(chat_id, "📌 زمان پیگیری بعدی را انتخاب کنید:", keyboard)
             return "ok"
 
         if text == "❌ خرید نکرد":
             state["step"] = "reason"
-
-            send_message(
-                chat_id,
-                "❌ علت خرید نکردن را وارد کنید:"
-            )
-
+            send_message(chat_id, "❌ علت خرید نکردن را وارد کنید:")
             return "ok"
-
-    # =========================
-    # AMOUNT
-    # =========================
 
     if step == "amount":
         clean = text.replace(",", "").replace(" ", "")
 
         if not clean.isdigit():
-            send_message(
-                chat_id,
-                "❗ مبلغ فقط باید عدد باشد.\n\nمثال:\n25000000"
-            )
+            send_message(chat_id, "❗ مبلغ فقط باید عدد باشد.\n\nمثال:\n25000000")
             return "ok"
 
         state["data"]["amount"] = clean
         finish(chat_id)
-
         return "ok"
 
-    # =========================
-    # FOLLOWUP
-    # =========================
-
     if step == "followup":
-        valid_followups = [
-            "📅 ۳ روز آینده",
-            "📅 تا یک هفته آینده",
-            "📅 تا آخر ماه"
-        ]
+        valid_followups = ["📅 ۳ روز آینده", "📅 تا یک هفته آینده", "📅 تا آخر ماه"]
 
         if text not in valid_followups:
-            send_message(
-                chat_id,
-                "❗ لطفاً زمان پیگیری را از دکمه‌ها انتخاب کنید."
-            )
+            send_message(chat_id, "❗ لطفاً زمان پیگیری را از دکمه‌ها انتخاب کنید.")
             return "ok"
 
         state["data"]["followup"] = text
         finish(chat_id)
-
         return "ok"
-
-    # =========================
-    # REASON
-    # =========================
 
     if step == "reason":
         state["data"]["reason"] = text
         finish(chat_id)
-
         return "ok"
-
-    # =========================
-    # PACK FLOW
-    # =========================
 
     nums = [str(i) for i in range(11)]
 
@@ -518,7 +373,6 @@ def webhook():
 
         state["data"]["pack15"] = text
         state["step"] = "pack45"
-
         send_message(chat_id, "📦 تعداد پک ۴۵ میلیونی:", [nums])
         return "ok"
 
@@ -529,7 +383,6 @@ def webhook():
 
         state["data"]["pack45"] = text
         state["step"] = "pack75"
-
         send_message(chat_id, "📦 تعداد پک ۷۵ میلیونی:", [nums])
         return "ok"
 
@@ -540,7 +393,6 @@ def webhook():
 
         state["data"]["pack75"] = text
         state["step"] = "pack150"
-
         send_message(chat_id, "📦 تعداد پک ۱۵۰ میلیونی:", [nums])
         return "ok"
 
@@ -551,7 +403,6 @@ def webhook():
 
         state["data"]["pack150"] = text
         state["step"] = "packplus"
-
         send_message(chat_id, "📦 تعداد پک بالای ۱۵۰ میلیونی:", [nums])
         return "ok"
 
@@ -562,11 +413,9 @@ def webhook():
 
         state["data"]["packplus"] = text
         finish(chat_id)
-
         return "ok"
 
     return "ok"
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
