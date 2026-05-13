@@ -15,6 +15,14 @@ SEND_URL = f"https://tapi.bale.ai/bot{TOKEN}/sendMessage"
 with open("customers.json", "r", encoding="utf-8") as f:
     customers = json.load(f)
 
+# تبدیل یاقوتی به ایمانی
+for customer_code in customers:
+    if customers[customer_code].get("supervisor", "") == "عباس یاقوتی":
+        customers[customer_code]["supervisor"] = "ایمانی"
+
+    if customers[customer_code].get("manager", "") == "عباس یاقوتی":
+        customers[customer_code]["manager"] = "ایمانی"
+
 file_lock = threading.Lock()
 
 supervisors = [
@@ -25,30 +33,23 @@ supervisors = [
     "محمدنیا",
     "زمانیان",
     "تقی زاده",
-    "ایمانی"
+    "ایمانی",
+    "خلفی"
 ]
-# تبدیل یاقوتی به ایمانی داخل دیتای مشتری‌ها
-for customer_code in customers:
-    if customers[customer_code]["supervisor"] == "عباس یاقوتی":
-        customers[customer_code]["supervisor"] = "ایمانی"
 
-    if customers[customer_code]["manager"] == "عباس یاقوتی":
-        customers[customer_code]["manager"] = "ایمانی"
 user_states = {}
+
 def jalali_date():
     return jdatetime.datetime.now().strftime("%m/%d")
 
-
 def jalali_datetime():
     return jdatetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-
 
 def format_price(price):
     try:
         return "{:,}".format(int(float(price)))
     except:
         return "0"
-
 
 def send_message(chat_id, text, keyboard=None):
     payload = {
@@ -72,7 +73,6 @@ def send_message(chat_id, text, keyboard=None):
         timeout=10
     )
 
-
 def append_csv(filename, headers, row):
     with file_lock:
         file_exists = os.path.isfile(filename)
@@ -84,7 +84,6 @@ def append_csv(filename, headers, row):
                 writer.writerow(headers)
 
             writer.writerow(row)
-
 
 def save_no_buy_report(data):
     headers = [
@@ -117,7 +116,6 @@ def save_no_buy_report(data):
 
     append_csv("report_no_buy.csv", headers, row)
 
-
 def save_pack_report(data):
     headers = [
         "تاریخ",
@@ -143,7 +141,6 @@ def save_pack_report(data):
 
     append_csv("report_pack.csv", headers, row)
 
-
 def reset_user(chat_id):
     user_states[chat_id] = {
         "step": "choose_supervisor",
@@ -157,7 +154,6 @@ def reset_user(chat_id):
         "👋 سلام\n\nلطفاً سرپرست خود را انتخاب کنید:",
         keyboard
     )
-
 
 def finish(chat_id):
     data = user_states[chat_id]["data"]
@@ -205,11 +201,9 @@ def finish(chat_id):
     user_states[chat_id]["step"] = "after_finish"
     user_states[chat_id]["data"] = {}
 
-
 @app.route("/")
 def home():
     return "Bale Bot Running"
-
 
 @app.route("/report_no_buy")
 def download_no_buy():
@@ -218,14 +212,12 @@ def download_no_buy():
 
     return send_file("report_no_buy.csv", as_attachment=True)
 
-
 @app.route("/report_pack")
 def download_pack():
     if not os.path.exists("report_pack.csv"):
         return "هنوز هیچ گزارش پکی ثبت نشده است.", 404
 
     return send_file("report_pack.csv", as_attachment=True)
-
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -306,10 +298,26 @@ def webhook():
 
         customer = customers[text]
 
-        selected_supervisor = state["data"]["supervisor"].replace(" ", "").strip()
-        customer_supervisor = customer.get("supervisor", "").replace(" ", "").strip()
+        selected_supervisor_raw = state["data"]["supervisor"].strip()
 
-        if selected_supervisor not in customer_supervisor:
+        if selected_supervisor_raw == "خلفی":
+            allowed_names = ["محمد افشار", "افشار"]
+        else:
+            allowed_names = [selected_supervisor_raw]
+
+        customer_supervisor_raw = customer.get("supervisor", "").strip()
+        customer_manager_raw = customer.get("manager", "").strip()
+
+        is_allowed = False
+
+        for name in allowed_names:
+            if name.replace(" ", "") in customer_supervisor_raw.replace(" ", ""):
+                is_allowed = True
+
+            if name.replace(" ", "") in customer_manager_raw.replace(" ", ""):
+                is_allowed = True
+
+        if not is_allowed:
             send_message(chat_id, "❌ این مشتری متعلق به سرپرست شما نیست.")
             return "ok"
 
@@ -357,12 +365,14 @@ def webhook():
 
         if text == "🔄 نیاز به پیگیری":
             state["step"] = "followup"
+
             keyboard = [
                 ["📅 ۳ روز آینده"],
                 ["📅 تا یک هفته آینده"],
                 ["📅 تا آخر ماه"],
                 ["🔄 شروع مجدد"]
             ]
+
             send_message(chat_id, "📌 زمان پیگیری بعدی را انتخاب کنید:", keyboard)
             return "ok"
 
@@ -375,7 +385,7 @@ def webhook():
         clean = text.replace(",", "").replace(" ", "")
 
         if not clean.isdigit():
-            send_message(chat_id, "❗ مبلغ فقط باید عدد باشد.\n\nمثال:\n25000000")
+            send_message(chat_id, "❗ مبلغ فقط باید عدد باشد.")
             return "ok"
 
         state["data"]["amount"] = clean
@@ -383,7 +393,11 @@ def webhook():
         return "ok"
 
     if step == "followup":
-        valid_followups = ["📅 ۳ روز آینده", "📅 تا یک هفته آینده", "📅 تا آخر ماه"]
+        valid_followups = [
+            "📅 ۳ روز آینده",
+            "📅 تا یک هفته آینده",
+            "📅 تا آخر ماه"
+        ]
 
         if text not in valid_followups:
             send_message(chat_id, "❗ لطفاً زمان پیگیری را از دکمه‌ها انتخاب کنید.")
@@ -407,6 +421,7 @@ def webhook():
 
         state["data"]["pack15"] = text
         state["step"] = "pack45"
+
         send_message(chat_id, "📦 تعداد پک ۴۵ میلیونی:", [nums])
         return "ok"
 
@@ -417,6 +432,7 @@ def webhook():
 
         state["data"]["pack45"] = text
         state["step"] = "pack75"
+
         send_message(chat_id, "📦 تعداد پک ۷۵ میلیونی:", [nums])
         return "ok"
 
@@ -427,6 +443,7 @@ def webhook():
 
         state["data"]["pack75"] = text
         state["step"] = "pack150"
+
         send_message(chat_id, "📦 تعداد پک ۱۵۰ میلیونی:", [nums])
         return "ok"
 
@@ -437,6 +454,7 @@ def webhook():
 
         state["data"]["pack150"] = text
         state["step"] = "packplus"
+
         send_message(chat_id, "📦 تعداد پک بالای ۱۵۰ میلیونی:", [nums])
         return "ok"
 
@@ -450,7 +468,6 @@ def webhook():
         return "ok"
 
     return "ok"
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
