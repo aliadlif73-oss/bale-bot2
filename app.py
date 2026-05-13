@@ -30,11 +30,14 @@ supervisors = [
 
 user_states = {}
 
+
 def jalali_date():
     return jdatetime.datetime.now().strftime("%m/%d")
 
+
 def jalali_datetime():
     return jdatetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+
 
 def format_price(price):
     try:
@@ -42,8 +45,12 @@ def format_price(price):
     except:
         return "0"
 
+
 def send_message(chat_id, text, keyboard=None):
-    payload = {"chat_id": chat_id, "text": text}
+    payload = {
+        "chat_id": chat_id,
+        "text": text
+    }
 
     if keyboard:
         payload["reply_markup"] = {
@@ -61,6 +68,7 @@ def send_message(chat_id, text, keyboard=None):
         timeout=10
     )
 
+
 def append_csv(filename, headers, row):
     with file_lock:
         file_exists = os.path.isfile(filename)
@@ -72,6 +80,7 @@ def append_csv(filename, headers, row):
                 writer.writerow(headers)
 
             writer.writerow(row)
+
 
 def save_no_buy_report(data):
     headers = [
@@ -104,6 +113,7 @@ def save_no_buy_report(data):
 
     append_csv("report_no_buy.csv", headers, row)
 
+
 def save_pack_report(data):
     headers = [
         "تاریخ",
@@ -129,6 +139,7 @@ def save_pack_report(data):
 
     append_csv("report_pack.csv", headers, row)
 
+
 def reset_user(chat_id):
     user_states[chat_id] = {
         "step": "choose_supervisor",
@@ -142,6 +153,7 @@ def reset_user(chat_id):
         "👋 سلام\n\nلطفاً سرپرست خود را انتخاب کنید:",
         keyboard
     )
+
 
 def finish(chat_id):
     data = user_states[chat_id]["data"]
@@ -189,9 +201,27 @@ def finish(chat_id):
     user_states[chat_id]["step"] = "after_finish"
     user_states[chat_id]["data"] = {}
 
+
 @app.route("/")
 def home():
     return "Bale Bot Running"
+
+
+@app.route("/report_no_buy")
+def download_no_buy():
+    if not os.path.exists("report_no_buy.csv"):
+        return "هنوز هیچ گزارش خرید نکرده‌ای ثبت نشده است.", 404
+
+    return send_file("report_no_buy.csv", as_attachment=True)
+
+
+@app.route("/report_pack")
+def download_pack():
+    if not os.path.exists("report_pack.csv"):
+        return "هنوز هیچ گزارش پکی ثبت نشده است.", 404
+
+    return send_file("report_pack.csv", as_attachment=True)
+
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -417,12 +447,6 @@ def webhook():
 
     return "ok"
 
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
-    @app.route("/report_no_buy")
-def download_no_buy():
-    return send_file("report_no_buy.csv", as_attachment=True)
-
-@app.route("/report_pack")
-def download_pack():
-    return send_file("report_pack.csv", as_attachment=True)
