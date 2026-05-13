@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, send_file
 import json
 import requests
 from datetime import datetime
@@ -419,3 +419,10 @@ def webhook():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+    @app.route("/report_no_buy")
+def download_no_buy():
+    return send_file("report_no_buy.csv", as_attachment=True)
+
+@app.route("/report_pack")
+def download_pack():
+    return send_file("report_pack.csv", as_attachment=True)
