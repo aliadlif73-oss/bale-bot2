@@ -27,10 +27,14 @@ supervisors = [
     "تقی زاده",
     "ایمانی"
 ]
+# تبدیل یاقوتی به ایمانی داخل دیتای مشتری‌ها
+for customer_code in customers:
+    if customers[customer_code]["supervisor"] == "عباس یاقوتی":
+        customers[customer_code]["supervisor"] = "ایمانی"
 
+    if customers[customer_code]["manager"] == "عباس یاقوتی":
+        customers[customer_code]["manager"] = "ایمانی"
 user_states = {}
-
-
 def jalali_date():
     return jdatetime.datetime.now().strftime("%m/%d")
 
