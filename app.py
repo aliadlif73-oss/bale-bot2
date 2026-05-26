@@ -150,10 +150,18 @@ def save_no_buy_report(data):
         "تاریخ",
         "تاریخ و ساعت",
         "سرپرست",
+        "مدیر",
+        "فروشنده",
         "کد مشتری",
         "نام مشتری",
-        "تعداد روز خرید نکرده",
-        "کل خرید ۱۴۰۴",
+        "نام تابلو",
+        "عنوان مسیر",
+        "کانال",
+        "درجه",
+        "سگمنت خرید",
+        "روز غیاب",
+        "وضعیت",
+        "پک خرید داشته؟",
         "نتیجه ویزیت",
         "مبلغ فروش ریال",
         "علت عدم خرید",
@@ -164,10 +172,18 @@ def save_no_buy_report(data):
         jalali_date(),
         jalali_datetime(),
         data.get("supervisor", ""),
+        data.get("manager", ""),
+        data.get("seller", ""),
         data.get("customer_code", ""),
         data.get("customer_name", ""),
+        data.get("signboard", ""),
+        data.get("route", ""),
+        data.get("channel", ""),
+        data.get("grade", ""),
+        data.get("purchase_segment", ""),
         data.get("days", ""),
-        data.get("last_buy", ""),
+        data.get("status", ""),
+        data.get("had_pack_purchase", ""),
         data.get("result", ""),
         data.get("amount", ""),
         data.get("reason", ""),
@@ -436,16 +452,29 @@ def webhook():
         state["data"]["customer_name"] = customer.get("name", "")
         state["data"]["days"] = customer.get("days", "")
         state["data"]["last_buy"] = customer.get("last_buy", "")
-
-        formatted_buy = format_price(customer.get("last_buy", 0))
+        state["data"]["manager"] = customer.get("manager", "")
+        state["data"]["seller"] = customer.get("seller", "")
+        state["data"]["route"] = customer.get("route", "")
+        state["data"]["signboard"] = customer.get("signboard", "")
+        state["data"]["channel"] = customer.get("channel", "")
+        state["data"]["grade"] = customer.get("grade", "")
+        state["data"]["purchase_segment"] = customer.get("purchase_segment", customer.get("last_buy", ""))
+        state["data"]["status"] = customer.get("status", "")
+        state["data"]["had_pack_purchase"] = customer.get("had_pack_purchase", "")
 
         info = f"""
 🏪 {customer.get('name', '')}
+🏷 نام تابلو: {customer.get('signboard', '')}
 
-📅 {customer.get('days', '')} روز خرید نداشته
+👤 فروشنده: {customer.get('seller', '')}
+🛣 مسیر: {customer.get('route', '')}
 
-💰 کل خرید ۱۴۰۴:
-{formatted_buy} ریال
+📅 {customer.get('days', '')} روز غیاب
+📊 وضعیت: {customer.get('status', '')}
+🧩 سگمنت خرید: {customer.get('purchase_segment', customer.get('last_buy', ''))}
+🏪 کانال: {customer.get('channel', '')}
+⭐ درجه: {customer.get('grade', '')}
+🎁 پک خرید داشته؟ {customer.get('had_pack_purchase', '')}
 """
 
         keyboard = [
