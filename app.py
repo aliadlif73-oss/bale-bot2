@@ -12,8 +12,90 @@ TOKEN = "1956867539:Qpq0riwmj0FemRdVwB60QRDGpgDz8txxLmU"
 SEND_URL = f"https://tapi.bale.ai/bot{TOKEN}/sendMessage"
 
 
-with open("customers.json", "r", encoding="utf-8") as f:
-    customers = json.load(f)
+def normalize_text(value):
+    """یکسان‌سازی نام‌ها برای تطبیق بدون خطا بین فایل‌های مختلف."""
+    return (
+        str(value or "")
+        .replace("ي", "ی")
+        .replace("ك", "ک")
+        .replace("\u200c", " ")
+        .replace("-", " ")
+        .strip()
+    )
+
+
+def normalize_key(value):
+    return "".join(normalize_text(value).split())
+
+
+def infer_channel_from_route(route, existing_channel=""):
+    if existing_channel:
+        return existing_channel
+
+    route = normalize_text(route)
+
+    if "داروخانه" in route:
+        return "داروخانه"
+    if "گالری" in route:
+        return "گالری"
+    if "مارکت" in route or "غیر داروخانه" in route:
+        return "مارکت"
+
+    return ""
+
+
+def standardize_customer_record(row):
+    """خواندن همزمان فرمت جدید اکسل و فرمت قبلی customers.json."""
+    route = row.get("route", row.get("route_title", ""))
+    days = row.get("days", row.get("days_since_last_purchase", ""))
+
+    return {
+        "manager": normalize_text(row.get("manager", "")),
+        "supervisor": normalize_text(row.get("supervisor", "")),
+        "seller": normalize_text(row.get("seller", "")),
+        "route": normalize_text(route),
+        "signboard": normalize_text(row.get("signboard", row.get("shop_sign", ""))),
+        "name": normalize_text(row.get("name", row.get("customer_name", ""))),
+        "days": str(days if days is not None else ""),
+        "avg_purchase": row.get("avg_purchase", ""),
+        "status": normalize_text(row.get("status", "خرید نکرده بالای ۹۰ روز")),
+        "channel": normalize_text(
+            infer_channel_from_route(route, row.get("channel", ""))
+        ),
+        "grade": normalize_text(row.get("grade", "")),
+        "purchase_segment": normalize_text(row.get("purchase_segment", "")),
+        "last_buy": normalize_text(row.get("last_buy", "")),
+        "had_pack_purchase": normalize_text(row.get("had_pack_purchase", "")),
+    }
+
+
+def load_customers(filename):
+    with open(filename, "r", encoding="utf-8") as f:
+        raw_customers = json.load(f)
+
+    customers_by_code = {}
+
+    # فرمت جدید: دیکشنری با کلید «کد پایگاه»
+    if isinstance(raw_customers, dict):
+        for customer_code, row in raw_customers.items():
+            if isinstance(row, dict):
+                customers_by_code[str(customer_code).strip()] = standardize_customer_record(row)
+
+    # پشتیبانی از فرمت لیستی قبلی، برای جلوگیری از خطا در آپدیت‌های بعدی
+    elif isinstance(raw_customers, list):
+        for row in raw_customers:
+            if not isinstance(row, dict):
+                continue
+
+            customer_code = str(row.get("customer_code", row.get("code", ""))).strip()
+
+            if customer_code:
+                customers_by_code[customer_code] = standardize_customer_record(row)
+
+    return customers_by_code
+
+
+customers = load_customers("customers.json")
 
 with open("remaining_pack.json", "r", encoding="utf-8") as f:
     remaining_pack_customers = json.load(f)
@@ -39,17 +121,23 @@ for customer_code in remaining_pack_customers:
 
 file_lock = threading.Lock()
 
-supervisors = [
-    "حمزه پور",
-    "شریفیان",
-    "سالاریه",
-    "کلانتری",
-    "محمدنیا",
-    "زمانیان",
-    "تقی زاده",
-    "ایمانی",
-    "خلفی"
-]
+
+# دکمه‌ها مستقیماً از ستون «سرپرست» فایل خرید نکرده جدید ساخته می‌شوند.
+# ردیف‌های فاقد سرپرست به‌عنوان دکمه نمایش داده نمی‌شوند.
+EXCLUDED_SUPERVISORS = {"", "نامشخص در فایل جدید"}
+
+
+def build_supervisors(customers_data):
+    names = {
+        normalize_text(customer.get("supervisor", ""))
+        for customer in customers_data.values()
+        if normalize_text(customer.get("supervisor", "")) not in EXCLUDED_SUPERVISORS
+    }
+
+    return sorted(names)
+
+
+supervisors = build_supervisors(customers)
 
 user_states = {}
 
@@ -115,34 +203,52 @@ def append_csv(filename, headers, row):
             writer.writerow(row)
 
 
+# تطبیق نام کامل جدید با نام‌های کوتاه یا قبلیِ موجود در remaining_pack.json
+SUPERVISOR_ALIASES = {
+    "امیر حمزه پور": ["امیر حمزه پور", "امیرحمزه پور", "حمزه پور"],
+    "آتوسا ایمانی": ["آتوسا ایمانی", "ایمانی", "عباس یاقوتی"],
+    "حسام الدین انتظاری": ["حسام الدین انتظاری", "حسام‌الدین انتظاری", "انتظاری"],
+    "حمید تقی زاده": ["حمید تقی زاده", "تقی زاده", "تقی‌زاده"],
+    "ساسان محمد نیای مردخه": [
+        "ساسان محمد نیای مردخه",
+        "ساسان محمدنیا",
+        "ساسان محمد نیا",
+        "محمدنیا",
+        "ساسان",
+    ],
+    "سعید شریفیان بجستانی": [
+        "سعید شریفیان بجستانی",
+        "شریفیان بجستانی",
+        "شریفیان",
+    ],
+    "محمد حاجی غلامعلی": ["محمد حاجی غلامعلی", "حاجی غلامعلی"],
+    "مرتضی تن آرای": ["مرتضی تن آرای", "تن آرای", "تن‌آرای"],
+    "مرتضی سالاریه": ["مرتضی سالاریه", "سالاریه"],
+    "میلاد کلانتری": ["میلاد کلانتری", "کلانتری"],
+}
+
+
 def get_allowed_names(selected_supervisor):
-    selected_supervisor = selected_supervisor.strip()
-
-    if selected_supervisor == "خلفی":
-        return ["خلفی", "فرهاد خلفی", "فرهاد خلفی - گالری", "محمد افشار", "افشار"]
-
-    if selected_supervisor == "ایمانی":
-        return ["ایمانی", "آتوسا ایمانی", "عباس یاقوتی"]
-
-    return [selected_supervisor]
+    selected_supervisor = normalize_text(selected_supervisor)
+    return SUPERVISOR_ALIASES.get(selected_supervisor, [selected_supervisor])
 
 
 def is_customer_allowed(selected_supervisor, customer):
     allowed_names = get_allowed_names(selected_supervisor)
-
-    customer_supervisor = customer.get("supervisor", "").replace(" ", "").strip()
-    customer_manager = customer.get("manager", "").replace(" ", "").strip()
+    customer_supervisor = normalize_key(customer.get("supervisor", ""))
+    customer_manager = normalize_key(customer.get("manager", ""))
 
     for name in allowed_names:
-        clean_name = name.replace(" ", "").strip()
+        clean_name = normalize_key(name)
 
-        if clean_name in customer_supervisor:
-            return True
-
-        if clean_name in customer_manager:
+        if clean_name and (
+            clean_name in customer_supervisor
+            or clean_name in customer_manager
+        ):
             return True
 
     return False
+
 
 
 def save_no_buy_report(data):
@@ -160,6 +266,7 @@ def save_no_buy_report(data):
         "درجه",
         "سگمنت خرید",
         "روز غیاب",
+        "میانگین خرید ریال",
         "وضعیت",
         "پک خرید داشته؟",
         "نتیجه ویزیت",
@@ -182,6 +289,7 @@ def save_no_buy_report(data):
         data.get("grade", ""),
         data.get("purchase_segment", ""),
         data.get("days", ""),
+        data.get("avg_purchase", ""),
         data.get("status", ""),
         data.get("had_pack_purchase", ""),
         data.get("result", ""),
@@ -451,6 +559,7 @@ def webhook():
         state["data"]["customer_code"] = text
         state["data"]["customer_name"] = customer.get("name", "")
         state["data"]["days"] = customer.get("days", "")
+        state["data"]["avg_purchase"] = customer.get("avg_purchase", "")
         state["data"]["last_buy"] = customer.get("last_buy", "")
         state["data"]["manager"] = customer.get("manager", "")
         state["data"]["seller"] = customer.get("seller", "")
@@ -470,6 +579,7 @@ def webhook():
 🛣 مسیر: {customer.get('route', '')}
 
 📅 {customer.get('days', '')} روز غیاب
+💰 میانگین خرید: {format_price(customer.get('avg_purchase', 0))} ریال
 📊 وضعیت: {customer.get('status', '')}
 🧩 سگمنت خرید: {customer.get('purchase_segment', customer.get('last_buy', ''))}
 🏪 کانال: {customer.get('channel', '')}
